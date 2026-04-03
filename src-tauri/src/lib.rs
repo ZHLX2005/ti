@@ -1,36 +1,31 @@
 use std::process::{Command, Stdio};
-use tauri::{Emitter, Manager};
+use tauri::{Emitter};
 
 #[tauri::command]
 fn run_command(window: tauri::Window, cmd: String) -> Result<String, String> {
-    let output = if cfg!(target_os = "windows") {
-        Command::new("cmd")
-            .args(["/C", &cmd])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
+    let shell = if cfg!(target_os = "windows") { "cmd" } else { "sh" };
+    let args = if cfg!(target_os = "windows") { ["/C", &cmd] } else { ["-c", &cmd] };
+
+    let output = Command::new(shell)
+        .args(&args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    let result = if stderr.is_empty() {
+        stdout
+    } else if stdout.is_empty() {
+        stderr
     } else {
-        Command::new("sh")
-            .args(["-c", &cmd])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
+        format!("{}\n{}", stdout, stderr)
     };
 
-    match output {
-        Ok(out) => {
-            let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-            let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-            let result = if stderr.is_empty() {
-                stdout
-            } else {
-                format!("{}\n{}", stdout, stderr)
-            };
-            let _ = window.emit("command-output", &result);
-            Ok(result)
-        }
-        Err(e) => Err(e.to_string()),
-    }
+    let _ = window.emit("command-output", &result);
+    Ok(result)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

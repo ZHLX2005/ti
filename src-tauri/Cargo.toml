@@ -9,7 +9,7 @@ edition = "2021"
 
 [lib]
 name = "ti_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+crate-type = ["staticlib", "cdilb", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
