@@ -3,8 +3,6 @@ name: Build
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
 
 concurrency:
   group: build-${{ github.ref }}
@@ -15,51 +13,35 @@ permissions:
 
 jobs:
   build:
-    name: Build ${{ matrix.os }} ${{ matrix.arch || '' }}
-    runs-on: ${{ matrix.runs-on }}
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
-            runs-on: windows-2022
-            arch: x64
-            bundle-suffix: Windows-x64
-          - os: ubuntu-latest
-            runs-on: ubuntu-22.04
-            arch: x64
-            bundle-suffix: Linux-x86_64
-          - os: ubuntu-latest-arm
-            runs-on: ubuntu-22.04-arm
-            arch: arm64
-            bundle-suffix: Linux-arm64
-          - os: macos-latest
-            runs-on: macos-14
-            arch: arm64
-            bundle-suffix: macOS-arm64
-          - os: macos-latest-x64
-            runs-on: macos-14
-            arch: x64
-            bundle-suffix: macOS-x86_64
+          - platform: ubuntu-22.04
+            distro: Linux-x86_64
+          - platform: windows-2022
+            distro: Windows-x64
+          - platform: macos-14
+            distro: macOS-arm64
+
+    runs-on: ${{ matrix.platform }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # ── Node.js ────────────────────────────────────────
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      # ── pnpm ──────────────────────────────────────────
       - name: Setup pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@v4
         with:
-          version: 10.12.3
-          run_install: false
+          version: 9
 
-      - name: Get pnpm store directory
+      - name: Get pnpm store
         id: pnpm-store
         shell: bash
         run: echo "path=$(pnpm store path --silent)" >> $GITHUB_OUTPUT
@@ -68,22 +50,30 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
-          key: ${{ runner.os }}-${{ runner.arch }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: ${{ runner.os }}-${{ runner.arch }}-pnpm-store-
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-store-
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Install deps
+        run: pnpm install
 
-      # ── Rust ──────────────────────────────────────────
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Add macOS targets
         if: runner.os == 'macOS'
-        run: |
-          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
-      - name: Cache Cargo registry and build
+      - name: Install Linux deps
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config libssl-dev \
+            libgtk-3-dev librsvg2-dev \
+            libwebkit2gtk-4.1-dev || libwebkit2gtk-4.0-dev
+
+      - name: Cache Cargo
         uses: actions/cache@v5
         with:
           path: |
@@ -93,148 +83,49 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
-      # ── Linux 系统依赖 ─────────────────────────────────
-      - name: Install Linux system deps
-        if: runner.os == 'Linux'
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
         shell: bash
-        run: |
-          set -euxo pipefail
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential \
-            pkg-config \
-            libssl-dev \
-            curl \
-            wget \
-            file \
-            patchelf \
-            libgtk-3-dev \
-            librsvg2-dev \
-            libayatana-appindicator3-dev
-          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev \
-            || sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.0-dev
-          sudo apt-get install -y --no-install-recommends libsoup-3.0-dev \
-            || sudo apt-get install -y --no-install-recommends libsoup2.4-dev
+        timeout-minutes: 60
+        run: pnpm tauri build --target universal-apple-darwin
 
-      # ── Tauri 构建 ─────────────────────────────────────
-      - name: Build Tauri App (Windows)
+      - name: Build (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: pnpm tauri build
 
-      - name: Build Tauri App (macOS)
-        if: runner.os == 'macOS'
-        shell: bash
-        timeout-minutes: 60
-        run: |
-          if [ "${{ matrix.arch }}" == "x64" ]; then
-            pnpm tauri build --target x86_64-apple-darwin
-          elif [ "${{ matrix.arch }}" == "arm64" ]; then
-            pnpm tauri build --target aarch64-apple-darwin
-          else
-            pnpm tauri build --target universal-apple-darwin
-          fi
-
-      - name: Build Tauri App (Linux)
+      - name: Build (Linux)
         if: runner.os == 'Linux'
         shell: bash
         run: pnpm tauri build --bundles deb,rpm
 
-      # ── 收集产物 ─────────────────────────────────────
-      - name: Collect Windows Assets
+      - name: Collect Assets (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force -Path release-assets | Out-Null
+          $msi = Get-ChildItem 'src-tauri/target/release/bundle/msi' -Recurse -Include *.msi -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($null -ne $msi) { Copy-Item $msi.FullName "release-assets/" -Force }
+          $exe = Get-ChildItem 'src-tauri/target/release/ti.exe' -ErrorAction SilentlyContinue
+          if ($null -ne $exe) { Copy-Item $exe.FullName "release-assets/" -Force }
 
-          # MSI
-          $msi = Get-ChildItem -Path 'src-tauri/target/release/bundle/msi' -Recurse -Include *.msi -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($null -ne $msi) {
-            Copy-Item $msi.FullName "release-assets/$($msi.Name)" -Force
-            $sigPath = "$($msi.FullName).sig"
-            if (Test-Path $sigPath) { Copy-Item $sigPath "release-assets/$($msi.Name).sig" -Force }
-          }
-
-          # 便携版 exe
-          $exeCandidates = @(
-            'src-tauri/target/release/*.exe',
-            'src-tauri/target/x86_64-pc-windows-msvc/release/*.exe'
-          )
-          $exe = Get-ChildItem $exeCandidates -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($null -ne $exe) {
-            $portableDir = 'release-assets/portable'
-            New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
-            Copy-Item $exe.FullName "$portableDir/"
-            Compress-Archive -Path "$portableDir/*" -DestinationPath "release-assets/portable.zip" -Force
-            Remove-Item -Recurse -Force $portableDir
-          }
-
-          Get-ChildItem release-assets | ForEach-Object { Write-Host "  $_" }
-
-      - name: Collect macOS Assets
+      - name: Collect Assets (macOS)
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          set -euxo pipefail
           mkdir -p release-assets
+          find src-tauri/target -name "*.tar.gz" -path "*/bundle/*" | head -1 | xargs -I{} cp {} release-assets/
 
-          # 查找 .app
-          APP_PATH=""
-          for path in \
-            "src-tauri/target/universal-apple-darwin/release/bundle/macos" \
-            "src-tauri/target/aarch64-apple-darwin/release/bundle/macos" \
-            "src-tauri/target/x86_64-apple-darwin/release/bundle/macos" \
-            "src-tauri/target/release/bundle/macos"; do
-            if [ -d "$path" ]; then
-              [ -z "$APP_PATH" ] && APP_PATH=$(find "$path" -maxdepth 1 -name "*.app" -type d | head -1 || true)
-            fi
-          done
-
-          if [ -n "$APP_PATH" ]; then
-            ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "release-assets/app.zip"
-            echo "macOS app.zip created"
-          fi
-
-          # .tar.gz (updater)
-          TAR_GZ=$(find src-tauri/target -name "*.tar.gz" -type f | head -1 || true)
-          if [ -n "$TAR_GZ" ]; then
-            cp "$TAR_GZ" "release-assets/app.tar.gz"
-            [ -f "$TAR_GZ.sig" ] && cp "$TAR_GZ.sig" "release-assets/app.tar.gz.sig"
-            echo "macOS tarball copied"
-          fi
-
-          ls -la release-assets/
-
-      - name: Collect Linux Assets
+      - name: Collect Assets (Linux)
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          set -euxo pipefail
           mkdir -p release-assets
+          find src-tauri/target/release/bundle -name "*.deb" | head -1 | xargs -I{} cp {} release-assets/ || true
+          find src-tauri/target/release/bundle -name "*.rpm" | head -1 | xargs -I{} cp {} release-assets/ || true
 
-          # deb
-          DEB=$(find src-tauri/target/release/bundle -name "*.deb" | head -1 || true)
-          [ -n "$DEB" ] && cp "$DEB" "release-assets/app.deb"
-
-          # rpm
-          RPM=$(find src-tauri/target/release/bundle -name "*.rpm" | head -1 || true)
-          [ -n "$RPM" ] && cp "$RPM" "release-assets/app.rpm"
-
-          ls -la release-assets/
-
-      # ── 上传 Artifact ─────────────────────────────────
       - name: Upload Artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
-          name: ${{ github.event.repository.name }}-${{ matrix.bundle-suffix }}
+          name: ti-${{ matrix.distro }}
           path: release-assets/*
-          if-no-files-found: error
-
-      # ── 调试：列出所有产物 ────────────────────────────
-      - name: List generated bundles
-        if: always()
-        shell: bash
-        run: |
-          echo "=== Bundles in src-tauri/target ==="
-          find src-tauri/target -maxdepth 5 -type f \( -name "*.exe" -o -name "*.msi" -o -name "*.app" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" -o -name "*.tar.gz" \) 2>/dev/null | head -20 || true
