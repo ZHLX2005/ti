@@ -45,4 +45,4 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: ti-exe
-          path: src-tauri/target/release/ti.exe
+          path: ${{ github.workspace }}/src-tauri/target/release/ti.exe
