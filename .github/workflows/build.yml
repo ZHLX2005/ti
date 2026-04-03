@@ -138,7 +138,7 @@ jobs:
       - name: Build Tauri App (Linux)
         if: runner.os == 'Linux'
         shell: bash
-        run: pnpm tauri build --bundles appimage,deb,rpm
+        run: pnpm tauri build --bundles deb,rpm
 
       # ── 收集产物 ─────────────────────────────────────
       - name: Collect Windows Assets
@@ -212,13 +212,6 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p release-assets
-
-          # AppImage
-          APPIMAGE=$(find src-tauri/target/release/bundle -name "*.AppImage" | head -1 || true)
-          if [ -n "$APPIMAGE" ]; then
-            cp "$APPIMAGE" "release-assets/app.AppImage"
-            [ -f "$APPIMAGE.sig" ] && cp "$APPIMAGE.sig" "release-assets/app.AppImage.sig"
-          fi
 
           # deb
           DEB=$(find src-tauri/target/release/bundle -name "*.deb" | head -1 || true)
