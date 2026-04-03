@@ -20,7 +20,7 @@ fn init_pty(window: tauri::Window) -> Result<String, String> {
         })
         .map_err(|e| e.to_string())?;
 
-    let mut cmd = CommandBuilder::new_default_prog();
+    let cmd = CommandBuilder::new_default_prog();
     let _child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
 
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
