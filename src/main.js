@@ -19,16 +19,19 @@ async function init() {
   window.addEventListener("resize", () => fitAddon.fit());
 
   try {
-    statusEl.textContent = "正在初始化PTY...";
-    await invoke("init_pty");
-    statusEl.textContent = "已连接";
+    statusEl.textContent = "就绪";
+    term.write("终端验证工具\r\n");
 
-    await listen("pty-data", (event) => {
+    await listen("command-output", (event) => {
       term.write(event.payload);
     });
 
     term.onData((data) => {
-      invoke("write_to_pty", { input: data });
+      if (data === "\r") {
+        term.write("\r\n");
+      } else {
+        term.write(data);
+      }
     });
   } catch (e) {
     statusEl.textContent = "错误: " + e;
@@ -36,11 +39,11 @@ async function init() {
   }
 }
 
-window.sendInput = async function(text) {
+window.sendCommand = async function(cmd) {
   try {
-    await invoke("write_to_pty", { input: text });
+    await invoke("run_command", { cmd });
   } catch (e) {
-    console.error(e);
+    term.write("\r\n\x1b[31m错误: " + e + "\x1b[0m\r\n");
   }
 };
 

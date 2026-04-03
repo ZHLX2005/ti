@@ -13,11 +13,9 @@
       .terminal { flex: 1; background: #0c0c0c; padding: 8px; }
       button { padding: 8px 16px; cursor: pointer; border: none; border-radius: 4px; font-size: 13px; transition: opacity 0.2s; }
       button:hover { opacity: 0.85; }
-      button:active { opacity: 0.7; }
-      .btn-default { background: #3a3a3a; color: #fff; }
-      .btn-enter { background: #0a4a8a; color: #fff; }
-      .btn-danger { background: #c41e3a; color: #fff; }
+      input { padding: 8px 12px; border: 1px solid #444; border-radius: 4px; background: #2a2a2a; color: #fff; font-size: 13px; width: 300px; }
       .btn-cmd { background: #2d5a2d; color: #fff; }
+      .btn-exec { background: #0a4a8a; color: #fff; }
       .status { color: #888; font-size: 12px; margin-left: auto; }
       #terminal { height: 100%; }
     </style>
@@ -25,12 +23,11 @@
   <body>
     <div class="container">
       <div class="control-panel">
-        <button class="btn-default" onclick="sendInput('r')">输入 'r'</button>
-        <button class="btn-enter" onclick="sendInput('\r')">Enter</button>
-        <button class="btn-danger" onclick="sendInput('\x03')">Ctrl+C</button>
-        <button class="btn-default" onclick="sendInput('\x1a')">Ctrl+Z</button>
-        <button class="btn-cmd" onclick="sendInput('ls -la\r')">ls -la</button>
-        <button class="btn-cmd" onclick="sendInput('echo test\r')">echo test</button>
+        <input type="text" id="cmdInput" placeholder="输入命令..." onkeypress="if(event.key==='Enter')executeCommand()" />
+        <button class="btn-exec" onclick="executeCommand()">执行</button>
+        <button class="btn-cmd" onclick="sendCmd('echo test')">echo test</button>
+        <button class="btn-cmd" onclick="sendCmd('ls -la')">ls -la</button>
+        <button class="btn-cmd" onclick="sendCmd('pwd')">pwd</button>
         <span class="status" id="status">初始化中...</span>
       </div>
       <div class="terminal">
@@ -38,5 +35,19 @@
       </div>
     </div>
     <script type="module" src="/src/main.js"></script>
+    <script>
+      function executeCommand() {
+        const input = document.getElementById('cmdInput');
+        const cmd = input.value.trim();
+        if (cmd) {
+          window.sendCommand(cmd);
+          input.value = '';
+        }
+      }
+      function sendCmd(cmd) {
+        document.getElementById('cmdInput').value = cmd;
+        window.sendCommand(cmd);
+      }
+    </script>
   </body>
 </html>

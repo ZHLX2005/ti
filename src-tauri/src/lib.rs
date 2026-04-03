@@ -1,66 +1,43 @@
-use portable_pty::{native_pty_system, CommandBuilder, PtySize};
-use std::io::{Read, Write};
-use std::sync::{Arc, Mutex};
-use tauri::{Emitter, Manager, State};
-
-struct PtyState {
-    writer: Arc<Mutex<Box<dyn Write + Send>>>,
-}
+use std::process::{Command, Stdio};
+use tauri::{Emitter, Manager};
 
 #[tauri::command]
-fn init_pty(window: tauri::Window) -> Result<String, String> {
-    let pty_system = native_pty_system();
+fn run_command(window: tauri::Window, cmd: String) -> Result<String, String> {
+    let output = if cfg!(target_os = "windows") {
+        Command::new("cmd")
+            .args(["/C", &cmd])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+    } else {
+        Command::new("sh")
+            .args(["-c", &cmd])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+    };
 
-    let pair = pty_system
-        .openpty(PtySize {
-            rows: 24,
-            cols: 80,
-            pixel_width: 0,
-            pixel_height: 0,
-        })
-        .map_err(|e| e.to_string())?;
-
-    let cmd = CommandBuilder::new_default_prog();
-    let _child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
-
-    let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
-    let writer_state = Arc::new(Mutex::new(writer));
-
-    let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
-
-    window.app_handle().manage(PtyState {
-        writer: writer_state.clone(),
-    });
-
-    std::thread::spawn(move || {
-        let mut buf = [0u8; 1024];
-        loop {
-            match reader.read(&mut buf) {
-                Ok(n) if n > 0 => {
-                    let data = String::from_utf8_lossy(&buf[..n]).to_string();
-                    let _ = window.emit("pty-data", data);
-                }
-                _ => break,
-            }
+    match output {
+        Ok(out) => {
+            let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+            let result = if stderr.is_empty() {
+                stdout
+            } else {
+                format!("{}\n{}", stdout, stderr)
+            };
+            let _ = window.emit("command-output", &result);
+            Ok(result)
         }
-    });
-
-    Ok("PTY Initialized".into())
-}
-
-#[tauri::command]
-fn write_to_pty(state: State<'_, PtyState>, input: String) -> Result<(), String> {
-    let mut writer = state.writer.lock().unwrap();
-    writer.write_all(input.as_bytes()).map_err(|e| e.to_string())?;
-    writer.flush().map_err(|e| e.to_string())?;
-    Ok(())
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .invoke_handler(tauri::generate_handler![init_pty, write_to_pty])
+        .invoke_handler(tauri::generate_handler![run_command])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
