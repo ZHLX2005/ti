@@ -24,6 +24,24 @@
       "csp": null
     }
   },
+  "plugins": {
+    "cli": {
+      "description": "Terminal Verification Tool",
+      "args": [
+        {
+          "name": "command",
+          "short": "c",
+          "takesValue": true,
+          "description": "Command to execute"
+        },
+        {
+          "name": "verbose",
+          "short": "v",
+          "description": "Verbose output"
+        }
+      ]
+    }
+  },
   "bundle": {
     "active": false
   }

@@ -1,20 +1,13 @@
 use std::process::{Command, Stdio};
-use tauri::Emitter;
+use tauri_plugin_cli::CliExt;
 
 #[tauri::command]
-fn init_shell(window: tauri::Window) -> Result<String, String> {
-    // 简单的命令执行演示
-    let _ = window.emit("pty-data", "终端已连接\r\n$ ");
-    Ok("Shell initialized".into())
-}
-
-#[tauri::command]
-fn write_to_shell(window: tauri::Window, input: String) -> Result<String, String> {
+fn run_command(cmd: String) -> Result<String, String> {
     let shell = if cfg!(target_os = "windows") { "cmd" } else { "sh" };
     let args = if cfg!(target_os = "windows") {
-        vec!["/C", &input]
+        vec!["/C", &cmd]
     } else {
-        vec!["-c", &input]
+        vec!["-c", &cmd]
     };
 
     let output = Command::new(shell)
@@ -29,11 +22,12 @@ fn write_to_shell(window: tauri::Window, input: String) -> Result<String, String
 
     let result = if stderr.is_empty() {
         stdout
+    } else if stdout.is_empty() {
+        stderr
     } else {
         format!("{}\n{}", stdout, stderr)
     };
 
-    let _ = window.emit("pty-data", &result);
     Ok(result)
 }
 
@@ -41,7 +35,19 @@ fn write_to_shell(window: tauri::Window, input: String) -> Result<String, String
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .invoke_handler(tauri::generate_handler![init_shell, write_to_shell])
+        .plugin(tauri_plugin_cli::init())
+        .invoke_handler(tauri::generate_handler![run_command])
+        .setup(|app| {
+            match app.cli().matches() {
+                Ok(_matches) => {
+                    println!("CLI initialized");
+                }
+                Err(e) => {
+                    eprintln!("CLI error: {}", e);
+                }
+            }
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

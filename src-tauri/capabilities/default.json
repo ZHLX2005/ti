@@ -6,6 +6,9 @@
   "permissions": [
     "core:default",
     "core:event:default",
-    "core:window:default"
+    "core:window:default",
+    "cli:default",
+    "cli:allow-cli-matches",
+    "shell:default"
   ]
 }
