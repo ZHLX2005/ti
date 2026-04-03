@@ -1,7 +1,7 @@
 import { Terminal } from "xterm";
 import { FitAddon } from "xterm-addon-fit";
-import { getMatches } from "@tauri-apps/plugin-cli";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 const terminalContainer = document.getElementById("terminal");
 const statusEl = document.getElementById("status");
@@ -18,28 +18,29 @@ async function init() {
   window.addEventListener("resize", () => fitAddon.fit());
 
   try {
-    const matches = await getMatches();
-    const args = matches.args;
+    statusEl.textContent = "连接终端中...";
+    await invoke("init_pty");
+    statusEl.textContent = "已连接";
 
-    if (args.command?.value) {
-      statusEl.textContent = "执行命令: " + args.command.value;
-      const cmd = args.command.value;
-      const result = await invoke("run_command", { cmd });
-      term.writeln(result);
-    } else {
-      statusEl.textContent = "终端已就绪";
-      term.writeln("Tauri CLI 终端验证工具");
-      term.writeln("用法: ti -c <命令>");
-      term.writeln("");
-    }
+    await listen("pty-data", (event) => {
+      term.write(event.payload);
+    });
 
-    if (args.verbose) {
-      term.writeln("Verbose 模式已启用");
-    }
+    term.onData((data) => {
+      invoke("write_to_pty", { input: data });
+    });
   } catch (e) {
     statusEl.textContent = "错误: " + e;
-    term.writeln("\r\n\x1b[31m初始化失败: " + e + "\x1b[0m");
+    term.write("\r\n\x1b[31m初始化失败: " + e + "\x1b[0m\r\n");
   }
 }
+
+window.sendInput = async function(text) {
+  try {
+    await invoke("write_to_pty", { input: text });
+  } catch (e) {
+    console.error(e);
+  }
+};
 
 init();
