@@ -31,18 +31,22 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
+      - name: Install cross toolchain
+        run: |
+          rustup target add x86_64-pc-windows-msvc
+          rustup set target-native-toolchain x86_64-pc-windows-msvc
+
       - name: Install frontend deps
         run: pnpm install
 
       - name: Build Tauri
-        run: pnpm tauri build
+        run: pnpm tauri build --target x86_64-pc-windows-msvc
 
       - name: Find exe
-        run: |
-          Get-ChildItem -Path . -Filter "*.exe" -Recurse -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
+        run: find . -name "ti.exe" -type f 2>/dev/null
 
       - name: Upload artifact
         uses: actions/upload-artifact@v5
         with:
           name: ti-exe
-          path: ${{ github.workspace }}/src-tauri/target/release/ti.exe
+          path: ${{ github.workspace }}/src-tauri/target/x86_64-pc-windows-msvc/release/ti.exe
