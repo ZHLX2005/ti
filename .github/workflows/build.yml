@@ -34,3 +34,9 @@ jobs:
 
       - name: Build Tauri
         run: pnpm tauri build
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ti-exe
+          path: src-tauri/target/release/ti.exe
