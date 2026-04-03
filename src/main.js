@@ -19,31 +19,28 @@ async function init() {
   window.addEventListener("resize", () => fitAddon.fit());
 
   try {
-    statusEl.textContent = "就绪";
-    term.write("终端验证工具\r\n");
+    statusEl.textContent = "正在连接终端...";
+    await invoke("init_pty");
+    statusEl.textContent = "已连接";
 
-    await listen("command-output", (event) => {
+    await listen("pty-data", (event) => {
       term.write(event.payload);
     });
 
     term.onData((data) => {
-      if (data === "\r") {
-        term.write("\r\n");
-      } else {
-        term.write(data);
-      }
+      invoke("write_to_pty", { input: data });
     });
   } catch (e) {
     statusEl.textContent = "错误: " + e;
-    term.write("\r\n\x1b[31m初始化失败\x1b[0m\r\n");
+    term.write("\r\n\x1b[31m初始化失败: " + e + "\x1b[0m\r\n");
   }
 }
 
-window.sendCommand = async function(cmd) {
+window.sendInput = async function(text) {
   try {
-    await invoke("run_command", { cmd });
+    await invoke("write_to_pty", { input: text });
   } catch (e) {
-    term.write("\r\n\x1b[31m错误: " + e + "\x1b[0m\r\n");
+    console.error(e);
   }
 };
 
