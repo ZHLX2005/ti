@@ -28,12 +28,4 @@ jobs:
         run: npm install
 
       - name: Build Tauri
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: v__VERSION__
-          releaseName: "ti v__VERSION__"
-          releaseBody: "Terminal MVP Release"
-          releaseDraft: true
-          prerelease: false
+        run: npm run tauri build
